@@ -1,0 +1,157 @@
+Practical Machine Learning Course Project
+========================================================
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+## Data 
+
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. 
+
+## Data Analysis 
+
+### Set working directory
+```{r}
+setwd("/Users/mac/Dropbox/coursera/practical machine learning/project")
+```
+
+### Load libraries. Allow parallel computing.
+```{r}
+library(doMC)
+registerDoMC(2)
+library(caret)
+library(randomForest)
+```
+
+### Read data
+```{r}
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+```
+
+### Check training and testing data
+```{r}
+dim(training)
+```
+
+```{r}
+str(training)
+summary(training)
+```
+```{r}
+dim(testing)
+```
+
+```{r}
+str(testing)
+summary(testing)
+```
+
+### Clean Data
+Check missing values.
+```{r}
+colSums(is.na(training))
+colSums(is.na(testing))
+```
+Remove columns with less than 80% complete data in testing samples.
+```{r}
+testing_complete <- testing[colSums(is.na(testing)) < 0.2 * nrow(testing)]
+```
+Remove column X, cvtd_timestamp, new_window and problem_id. 
+```{r}
+testing_complete <- testing_complete[,-c(1,5,6,60)]
+```
+Check the dimension of the final testing set.
+```{r}
+dim(testing_complete)
+```
+
+Remove corresponding columns in training samples.
+```{r}
+training_complete <- training[colSums(is.na(testing)) < 0.2 * nrow(testing)]
+```
+Remove column X, cvtd_timestamp, new_window.
+```{r}
+training_complete <- training_complete[,-c(1,5,6)]
+```
+Check the dimension of the final training set.
+```{r}
+dim(training_complete)
+```
+
+### Cross-validation
+Create training and validation sets from the final training set so that 70% samples are in training set and 30% samples are in validation set.
+```{r}
+set.seed(1985)
+inTrain <- createDataPartition(y = training_complete$classe, p = 0.7, list = FALSE)
+trainSet <- training_complete[inTrain, ]            
+validationSet <- training_complete[-inTrain, ]    
+```
+
+### Model: Random Forest
+First, I try to fit a random forest model with the default setting (number of trees to grow is 500 and and the number of variables to randomly sampled as candidates at each split is sqrt(p), where p is the number of variables in the training set) to the training data set.
+I set `importance = TRUE` so that the importance of variables is assessed.
+```{r}
+modFit <- randomForest(classe ~., data = trainSet, importance = TRUE, proximity = TRUE)
+```
+
+### Summary of the random forest model
+```{r}
+summary(modFit)
+```
+
+```{r}
+print(modFit)
+```
+
+The expected out of sample error is 0.17%, which is very low! 
+
+### Assess importance of predictors
+The importance of predictors can be assessed by checking the magnitude of either ``MeanDecreaseAccuracy`` or ``MeanDecreaseGini``.
+
+```{r}
+round(importance(modFit),2)
+```
+
+I also try to produce the variable importance plot to visualize which variables are important in this model.
+```{r fig.width=9, fig.height=6}
+varImpPlot(modFit, main = "Variable Importance Plot")
+```
+
+### Model Evaluation
+Even though the random forest model itself estimates the out of sample error rates, I still evaluate this model by using the validation set.
+
+```{r}
+validationPred<- predict(object = modFit, newdata = validationSet[,-59])
+confusionMatrix(validationPred, validationSet$classe)
+```
+
+It shows that the accuracy of this random forest model on the validation set is 99.9%. The out of sample error rate is less than 1%. The sensitivity and speciicity are all very close to 100%. Therefore, I decide to use this model to predict the testing set.
+
+### Prediction on the testing set
+Finally, I apply the random forest model to predict the testing set.
+```{r}
+testingPred <- predict(object = modFit, newdata = testing_complete)
+print(testingPred)
+```
+
+I stored the results as a character vector and use the codes provided on the course website to create the submission text files.
+```{r}
+answers <- as.character(testingPred)
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+```
